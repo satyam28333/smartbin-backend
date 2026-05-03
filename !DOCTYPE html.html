@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Dustbin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb4d);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input, button {
+            padding: 10px;
+            border-radius: 8px;
+            border: none;
+            font-size: 1rem;
+        }
+        input {
+            width: 250px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px;
+        }
+        input::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        button {
+            background: #007BFF;
+            color: white;
+            cursor: pointer;
+            margin: 5px;
+            padding: 10px 20px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .device-card {
+            background: rgba(0,0,0,0.5);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .device-card h3 {
+            margin-bottom: 10px;
+        }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+        }
+        .error {
+            color: #ff8888;
+        }
+        .success {
+            color: #88ff88;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+        .logout-btn {
+            background: #dc3545;
+            float: right;
+        }
+        .refresh-btn {
+            background: #28a745;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🗑️ Smart Dustbin</h1>
+
+    <!-- Login/Register Section -->
+    <div id="authSection" class="card">
+        <div style="display: flex; gap: 20px; justify-content: center;">
+            <div id="loginDiv">
+                <h3>Login</h3>
+                <div class="form-group">
+                    <input type="email" id="loginEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="loginPassword" placeholder="Password">
+                </div>
+                <button onclick="login()">Login</button>
+                <p id="loginError" class="error"></p>
+            </div>
+            <div id="registerDiv">
+                <h3>Register</h3>
+                <div class="form-group">
+                    <input type="text" id="regUsername" placeholder="Username">
+                </div>
+                <div class="form-group">
+                    <input type="email" id="regEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="regPassword" placeholder="Password">
+                </div>
+                <button onclick="register()">Register</button>
+                <p id="regError" class="error"></p>
+                <p id="regSuccess" class="success"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard (hidden until logged in) -->
+    <div id="dashboardSection" class="hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <button onclick="showAddDevice()" style="background: #28a745;">+ Add Device</button>
+            <button onclick="logout()" style="background: #dc3545;">Logout</button>
+        </div>
+
+        <!-- Add Device Modal (simple) -->
+        <div id="addDeviceModal" class="hidden card" style="margin-bottom: 20px;">
+            <h3>Register New Dustbin</h3>
+            <div class="form-group">
+                <input type="text" id="newDeviceId" placeholder="Device ID (e.g., bin_kitchen)">
+            </div>
+            <div class="form-group">
+                <input type="text" id="newDeviceName" placeholder="Display Name (e.g., Kitchen Bin)">
+            </div>
+            <button onclick="addDevice()">Register</button>
+            <button onclick="hideAddDevice()">Cancel</button>
+            <p id="addDeviceError" class="error"></p>
+        </div>
+
+        <div id="devicesContainer" class="device-grid">
+            <div class="loading">Loading devices...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Backend URL - change if backend is not on the same PC
+    const API_BASE = 'http://localhost:5000/api';
+    let authToken = localStorage.getItem('token');
+
+    // Helper for API calls
+    async function apiCall(endpoint, method, body = null) {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        const options = {
+            method: method,
+            headers: headers
+        };
+        if (body) {
+            options.body = JSON.stringify(body);
+        }
+        const response = await fetch(`${API_BASE}${endpoint}`, options);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Request failed');
+        }
+        return await response.json();
+    }
+
+    // Authentication
+    async function login() {
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        try {
+            const data = await apiCall('/auth/login', 'POST', { email, password });
+            authToken = data.token;
+            localStorage.setItem('token', authToken);
+            document.getElementById('loginError').innerText = '';
+            document.getElementById('authSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            loadDevices();
+            startAutoRefresh();
+        } catch (err) {
+            document.getElementById('loginError').innerText = err.message;
+        }
+    }
+
+    async function register() {
+        const username = document.getElementById('regUsername').value;
+        const email = document.getElementById('regEmail').value;
+        const password = document.getElementById('regPassword').value;
+        try {
+            await apiCall('/auth/register', 'POST', { username, email, password });
+            document.getElementById('regSuccess').innerText = 'Registration successful! Please login.';
+            document.getElementById('regError').innerText = '';
+            document.getElementById('regUsername').value = '';
+            document.getElementById('regEmail').value = '';
+            document.getElementById('regPassword').value = '';
+        } catch (err) {
+            document.getElementById('regError').innerText = err.message;
+            document.getElementById('regSuccess').innerText = '';
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('token');
+        authToken = null;
+        document.getElementById('dashboardSection').classList.add('hidden');
+        document.getElementById('authSection').classList.remove('hidden');
+        if (refreshInterval) clearInterval(refreshInterval);
+    }
+
+    // Device management
+    async function loadDevices() {
+        try {
+            const devices = await apiCall('/devices', 'GET');
+            const container = document.getElementById('devicesContainer');
+            if (devices.length === 0) {
+                container.innerHTML = '<div class="card">No devices. Click "+ Add Device" to register your dustbin.</div>';
+                return;
+            }
+            container.innerHTML = '';
+            for (const device of devices) {
+                const card = document.createElement('div');
+                card.className = 'device-card';
+                card.id = `device-${device.device_id}`;
+                card.innerHTML = `
+                    <h3>${device.name}</h3>
+                    <p style="font-size:0.8rem; opacity:0.7;">ID: ${device.device_id}</p>
+                    <div class="status-row"><span>📦 Fill:</span><span id="fill-${device.device_id}">--%</span></div>
+                    <div class="status-row"><span>💧 Moisture:</span><span id="moisture-${device.device_id}">--</span></div>
+                    <div class="status-row"><span>🚪 Lid:</span><span id="lid-${device.device_id}">--</span></div>
+                    <div class="status-row"><span>🔒 Lock:</span><span id="lock-${device.device_id}">--</span></div>
+                    <div class="status-row"><span>🤖 Auto:</span><span id="auto-${device.device_id}">--</span></div>
+                    <div class="btn-group">
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'open_lid')">Open</button>
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'close_lid')">Close</button>
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'force_dry')">Dry</button>
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'force_wet')">Wet</button>
+                        <button class="btn-sm" id="lockBtn-${device.device_id}" onclick="toggleLock('${device.device_id}')">Lock</button>
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'auto_on')">Auto On</button>
+                        <button class="btn-sm" onclick="sendCommand('${device.device_id}', 'auto_off')">Auto Off</button>
+                    </div>
+                `;
+                container.appendChild(card);
+                // Fetch latest data for this device
+                fetchDeviceData(device.device_id);
+            }
+        } catch (err) {
+            console.error(err);
+            document.getElementById('devicesContainer').innerHTML = `<div class="card error">Error loading devices: ${err.message}</div>`;
+        }
+    }
+
+    async function fetchDeviceData(deviceId) {
+        try {
+            const data = await apiCall(`/data/latest/${deviceId}`, 'GET');
+            // Update UI elements
+            const fillSpan = document.getElementById(`fill-${deviceId}`);
+            if (fillSpan) fillSpan.innerText = (data.fill?.fill ?? '--') + '%' + (data.fill?.full ? ' 🔴 FULL' : '');
+            const moistureSpan = document.getElementById(`moisture-${deviceId}`);
+            if (moistureSpan) moistureSpan.innerText = (data.moisture?.raw ?? '--') + ' (' + (data.moisture?.type ?? '?') + ')';
+            const lidSpan = document.getElementById(`lid-${deviceId}`);
+            if (lidSpan) lidSpan.innerText = data.status?.lid === 'open' ? 'OPEN' : 'CLOSED';
+            const lockSpan = document.getElementById(`lock-${deviceId}`);
+            if (lockSpan) lockSpan.innerText = data.status?.locked ? 'LOCKED' : 'UNLOCKED';
+            const autoSpan = document.getElementById(`auto-${deviceId}`);
+            if (autoSpan) autoSpan.innerText = data.status?.auto ? 'ON' : 'OFF';
+            const lockBtn = document.getElementById(`lockBtn-${deviceId}`);
+            if (lockBtn) lockBtn.innerText = data.status?.locked ? 'Unlock' : 'Lock';
+        } catch (err) {
+            console.error(`Error fetching data for ${deviceId}:`, err);
+        }
+    }
+
+    async function sendCommand(deviceId, command) {
+        try {
+            await apiCall(`/control/${deviceId}`, 'POST', { command });
+            // After command, refresh data after short delay
+            setTimeout(() => fetchDeviceData(deviceId), 500);
+        } catch (err) {
+            alert(`Command failed: ${err.message}`);
+        }
+    }
+
+    async function toggleLock(deviceId) {
+        // Need current lock status – we can read from UI or fetch latest first
+        const lockSpan = document.getElementById(`lock-${deviceId}`);
+        const isLocked = lockSpan.innerText === 'LOCKED';
+        const command = isLocked ? 'unlock' : 'lock';
+        await sendCommand(deviceId, command);
+    }
+
+    async function addDevice() {
+        const device_id = document.getElementById('newDeviceId').value.trim();
+        const name = document.getElementById('newDeviceName').value.trim();
+        if (!device_id || !name) {
+            document.getElementById('addDeviceError').innerText = 'Both fields required';
+            return;
+        }
+        try {
+            await apiCall('/devices', 'POST', { device_id, name });
+            hideAddDevice();
+            loadDevices();
+        } catch (err) {
+            document.getElementById('addDeviceError').innerText = err.message;
+        }
+    }
+
+    function showAddDevice() {
+        document.getElementById('addDeviceModal').classList.remove('hidden');
+    }
+    function hideAddDevice() {
+        document.getElementById('addDeviceModal').classList.add('hidden');
+        document.getElementById('newDeviceId').value = '';
+        document.getElementById('newDeviceName').value = '';
+        document.getElementById('addDeviceError').innerText = '';
+    }
+
+    let refreshInterval = null;
+    function startAutoRefresh() {
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(() => {
+            // Reload all devices data
+            const deviceCards = document.querySelectorAll('.device-card');
+            deviceCards.forEach(card => {
+                const deviceId = card.querySelector('p')?.innerText.split('ID: ')[1];
+                if (deviceId) fetchDeviceData(deviceId);
+            });
+        }, 3000);
+    }
+
+    // Check if already logged in on page load
+    if (authToken) {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.remove('hidden');
+        loadDevices();
+        startAutoRefresh();
+    }
+</script>
+</body>
+</html>
